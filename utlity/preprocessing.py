@@ -10,8 +10,8 @@ from PIL import Image
  
 
 class preprocessing:
-    # __doc__ = """
-    # This module contains the `preprocess_face` function, which takes a raw OpenCV frame
+    __doc__ = """
+    This module contains the `preprocess_face` function, which takes a raw OpenCV frame"""
 
     def __init__(self,TARGET_SIZE = (160, 160)):
         self.TARGET_SIZE = TARGET_SIZE

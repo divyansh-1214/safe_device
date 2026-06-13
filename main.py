@@ -1,10 +1,8 @@
 import cv2
-from detectors.face_detector import OpenCVFaceDetector
 import numpy as np
-import torch
-from PIL import Image
-
+from detectors.face_detector import OpenCVFaceDetector
 from utlity.preprocessing import  preprocessing
+from utlity.embedding import ArcFaceEmbedder 
 
 
 def main():
@@ -15,6 +13,12 @@ def main():
 
     detector = OpenCVFaceDetector()
     preprocessor = preprocessing()
+    try:
+        embedder = ArcFaceEmbedder()
+    except Exception as exc:
+        embedder = None
+        print(f"[ArcFace] Embedding disabled: {exc}")
+    
     print("Backend:", detector.backend)
     try:
         while True:
@@ -23,27 +27,7 @@ def main():
                 break
             
             faces = detector.detect(frame)
-            
-            for det in faces:
-                face_tensor = preprocessor.preprocess_face(frame, det)
-                print("Face tensor shape:", face_tensor.shape)
-                # print(face_tensor)
-            # print(
-            #     [
-            #         {
-            #             "bbox": face["bbox"],
-            #             "expanded_bbox": face["expanded_bbox"],
-            #             "confidence": face["confidence"],
-            #             "keypoints": face["keypoints"],
-            #             "keypoints_by_name": face["keypoints_by_name"],
-            #             "face_center": face["face_center"],
-            #             "face_area": face["face_area"],
-            #             "face_aspect_ratio": face["face_aspect_ratio"],
-            #             "face_crop_shape": face["face_crop"].shape,
-            #         }
-            #         for face in faces
-            #     ]
-            # )
+
             for face in faces:
                 x, y, w, h = face["expanded_bbox"]
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -53,7 +37,19 @@ def main():
                 if face["face_crop"].size > 0:
                     cv2.imshow("Face Crop", face["face_crop"])
 
+                face_tensor = preprocessor.preprocess_face(frame, face)
+                print("Face tensor shape:", face_tensor.shape)
+
+                if embedder is not None:
+                    embedding = embedder.get_embedding(frame, face)
+                    if embedding is not None:
+                        print(f"Shape : {embedding.shape}")          # (512,)
+                        print(f"Norm  : {np.linalg.norm(embedding):.6f}")  # ~1.0
+                        print(f"Range : [{embedding.min():.4f}, {embedding.max():.4f}]")
+                        print(f"First 5: {embedding[:5].round(4)}")
+
             cv2.imshow("Video Stream", frame)
+
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     finally:
