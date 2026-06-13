@@ -1,6 +1,10 @@
 import cv2
 from detectors.face_detector import OpenCVFaceDetector
+import numpy as np
+import torch
+from PIL import Image
 
+from utlity.preprocessing import  preprocessing
 
 
 def main():
@@ -10,30 +14,36 @@ def main():
         raise SystemExit(1)
 
     detector = OpenCVFaceDetector()
+    preprocessor = preprocessing()
     print("Backend:", detector.backend)
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-
+            
             faces = detector.detect(frame)
-            print(
-                [
-                    {
-                        "bbox": face["bbox"],
-                        "expanded_bbox": face["expanded_bbox"],
-                        "confidence": face["confidence"],
-                        "keypoints": face["keypoints"],
-                        "keypoints_by_name": face["keypoints_by_name"],
-                        "face_center": face["face_center"],
-                        "face_area": face["face_area"],
-                        "face_aspect_ratio": face["face_aspect_ratio"],
-                        "face_crop_shape": face["face_crop"].shape,
-                    }
-                    for face in faces
-                ]
-            )
+            
+            for det in faces:
+                face_tensor = preprocessor.preprocess_face(frame, det)
+                print("Face tensor shape:", face_tensor.shape)
+                # print(face_tensor)
+            # print(
+            #     [
+            #         {
+            #             "bbox": face["bbox"],
+            #             "expanded_bbox": face["expanded_bbox"],
+            #             "confidence": face["confidence"],
+            #             "keypoints": face["keypoints"],
+            #             "keypoints_by_name": face["keypoints_by_name"],
+            #             "face_center": face["face_center"],
+            #             "face_area": face["face_area"],
+            #             "face_aspect_ratio": face["face_aspect_ratio"],
+            #             "face_crop_shape": face["face_crop"].shape,
+            #         }
+            #         for face in faces
+            #     ]
+            # )
             for face in faces:
                 x, y, w, h = face["expanded_bbox"]
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
