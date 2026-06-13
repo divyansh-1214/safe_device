@@ -81,7 +81,7 @@ class OpenCVFaceDetector:
             for name, point in zip(names, keypoints)
         ]
 
-    def _build_detection(self, frame_bgr, bbox, confidence=None, keypoints=None):
+    def _build_detection(self, frame_bgr, bbox, confidence=None, keypoints=None, embedding=None):
         x, y, w, h = bbox
         clipped_bbox = self._clamp_bbox(frame_bgr, bbox)
         expanded_bbox = self._expand_bbox(frame_bgr, clipped_bbox)
@@ -100,6 +100,7 @@ class OpenCVFaceDetector:
             "face_area": max(0, int(w)) * max(0, int(h)),
             "face_aspect_ratio": (float(w) / float(h)) if h else None,
             "face_crop": face_crop,
+            "embedding": embedding,
         }
 
     def detect(self, frame_bgr):
@@ -116,6 +117,7 @@ class OpenCVFaceDetector:
                 x1, y1, x2, y2 = face.bbox.astype(np.int32)
                 bbox = (int(x1), int(y1), int(x2 - x1), int(y2 - y1))
                 keypoints = self._normalize_insightface_keypoints(face.kps)
+                embedding = face.embedding if hasattr(face, "embedding") else None
 
                 detections_data.append(
                     self._build_detection(
@@ -123,6 +125,7 @@ class OpenCVFaceDetector:
                         bbox,
                         confidence=float(getattr(face, "det_score", 0.0)),
                         keypoints=keypoints,
+                        embedding=embedding,
                     )
                 )
 

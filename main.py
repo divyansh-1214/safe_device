@@ -20,6 +20,9 @@ def main():
         print(f"[ArcFace] Embedding disabled: {exc}")
     
     print("Backend:", detector.backend)
+    
+    known_embeddings = []
+    
     try:
         while True:
             ret, frame = cap.read()
@@ -38,20 +41,49 @@ def main():
                     cv2.imshow("Face Crop", face["face_crop"])
 
                 face_tensor = preprocessor.preprocess_face(frame, face)
-                print("Face tensor shape:", face_tensor.shape)
-
-                if embedder is not None:
+                
+                # Use pre-calculated embedding if available (avoids double inference)
+                if face.get("embedding") is not None:
+                    embedding = face["embedding"]
+                elif embedder is not None:
                     embedding = embedder.get_embedding(frame, face)
-                    if embedding is not None:
-                        print(f"Shape : {embedding.shape}")          # (512,)
-                        print(f"Norm  : {np.linalg.norm(embedding):.6f}")  # ~1.0
-                        print(f"Range : [{embedding.min():.4f}, {embedding.max():.4f}]")
-                        print(f"First 5: {embedding[:5].round(4)}")
+                else:
+                    embedding = None
+
+                face["current_embedding"] = embedding
+
+                if embedding is not None:
+                    # Identification
+                    best_match_id = -1
+                    best_similarity = -1
+                    for i, known_emb in enumerate(known_embeddings):
+                        # Cosine similarity
+                        similarity = np.dot(embedding, known_emb) / (np.linalg.norm(embedding) * np.linalg.norm(known_emb))
+                        if similarity > best_similarity:
+                            best_similarity = similarity
+                            best_match_id = i
+                    
+                    # Threshold for recognition (0.5 is a common starting point for Cosine Similarity with ArcFace)
+                    if best_similarity > 0.5:
+                        label = f"ID: {best_match_id} ({best_similarity:.2f})"
+                        color = (0, 255, 0)
+                    else:
+                        label = "Unknown (Press 's' to save)"
+                        color = (0, 0, 255)
+                        
+                    cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
             cv2.imshow("Video Stream", frame)
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 break
+            elif key == ord("s"):
+                # Store unknown faces
+                for face in faces:
+                    if face.get("current_embedding") is not None:
+                        known_embeddings.append(face["current_embedding"])
+                        print(f"Stored face with ID: {len(known_embeddings) - 1}")
     finally:
         detector.close()
         cap.release()
