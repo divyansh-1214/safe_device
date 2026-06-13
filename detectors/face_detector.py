@@ -1,9 +1,40 @@
 import cv2
+import numpy as np
+
+try:
+    from insightface.app import FaceAnalysis
+except Exception:  # pragma: no cover - optional dependency
+    FaceAnalysis = None
+
 from mtcnn import MTCNN
 
 
 class OpenCVFaceDetector:
     def __init__(self):
+        self.detector = None
+        self.app = None
+
+        if FaceAnalysis is not None:
+            try:
+                self.app = FaceAnalysis(
+                    name="buffalo_l",
+                    providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+                )
+                self.app.prepare(ctx_id=0, det_size=(640, 640))
+                self.backend = "insightface-cuda"
+                return
+            except Exception:
+                try:
+                    self.app = FaceAnalysis(
+                        name="buffalo_l",
+                        providers=["CPUExecutionProvider"],
+                    )
+                    self.app.prepare(ctx_id=-1, det_size=(640, 640))
+                    self.backend = "insightface-cpu"
+                    return
+                except Exception:
+                    self.app = None
+
         self.detector = MTCNN()
         self.backend = "mtcnn"
 
@@ -43,6 +74,13 @@ class OpenCVFaceDetector:
             for name, point in keypoints.items()
         ]
 
+    def _normalize_insightface_keypoints(self, keypoints):
+        names = ["left_eye", "right_eye", "nose", "mouth_left", "mouth_right"]
+        return [
+            {"name": name, "point": (int(point[0]), int(point[1]))}
+            for name, point in zip(names, keypoints)
+        ]
+
     def _build_detection(self, frame_bgr, bbox, confidence=None, keypoints=None):
         x, y, w, h = bbox
         clipped_bbox = self._clamp_bbox(frame_bgr, bbox)
@@ -65,10 +103,33 @@ class OpenCVFaceDetector:
         }
 
     def detect(self, frame_bgr):
+        detections_data = []
+
+        if self.app is not None:
+            rgb_frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            results = self.app.get(rgb_frame)
+
+            if not results:
+                return detections_data
+
+            for face in results:
+                x1, y1, x2, y2 = face.bbox.astype(np.int32)
+                bbox = (int(x1), int(y1), int(x2 - x1), int(y2 - y1))
+                keypoints = self._normalize_insightface_keypoints(face.kps)
+
+                detections_data.append(
+                    self._build_detection(
+                        frame_bgr,
+                        bbox,
+                        confidence=float(getattr(face, "det_score", 0.0)),
+                        keypoints=keypoints,
+                    )
+                )
+
+            return detections_data
+
         rgb_frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         results = self.detector.detect_faces(rgb_frame)
-
-        detections_data = []
 
         if not results:
             return detections_data
@@ -91,3 +152,4 @@ class OpenCVFaceDetector:
 
     def close(self):
         self.detector = None
+        self.app = None

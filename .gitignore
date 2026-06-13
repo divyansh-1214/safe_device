@@ -1,3 +1,5 @@
 .venv
 .venv310
+venv
 __pycache__
+detectors/__pycache__
