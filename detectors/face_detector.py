@@ -117,7 +117,12 @@ class OpenCVFaceDetector:
                 x1, y1, x2, y2 = face.bbox.astype(np.int32)
                 bbox = (int(x1), int(y1), int(x2 - x1), int(y2 - y1))
                 keypoints = self._normalize_insightface_keypoints(face.kps)
-                embedding = face.embedding if hasattr(face, "embedding") else None
+                raw_emb = face.embedding if hasattr(face, "embedding") else None
+                if raw_emb is not None:
+                    raw_emb = raw_emb.astype(np.float32)
+                    embedding = raw_emb / np.linalg.norm(raw_emb)
+                else:
+                    embedding = None
 
                 detections_data.append(
                     self._build_detection(

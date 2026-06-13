@@ -61,8 +61,10 @@ class ArcFaceEmbedder:
         # Take the highest confidence face
         face = max(faces, key=lambda f: f.det_score)
 
-        # embedding is already L2-normalized by insightface
-        embedding = face.embedding    # (512,) float32
+        # L2-normalize so every embedding sits on the unit sphere.
+        # InsightFace's raw output has norm ~23; matching requires norm == 1.0.
+        raw = face.embedding.astype(np.float32)   # (512,)
+        embedding = raw / np.linalg.norm(raw)
 
         return embedding
 
@@ -81,4 +83,5 @@ class ArcFaceEmbedder:
         if not faces:
             return None
 
-        return max(faces, key=lambda f: f.det_score).embedding
+        raw = max(faces, key=lambda f: f.det_score).embedding.astype(np.float32)
+        return raw / np.linalg.norm(raw)

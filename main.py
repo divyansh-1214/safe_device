@@ -1,89 +1,129 @@
+"""
+main.py — Real-time Face Verification Demo
+==========================================
+Integrates all modules:
+    M1 — Face Detection  (detectors/face_detector.py)
+    M2 — Preprocessing   (utlity/preprocessing.py)
+    M3 — Embedding       (utlity/embedding.py)       [via M1 cache]
+    M4 — Face Database   (face_db/faces.pkl)          [via FaceMatcher]
+    M5 — Face Matching   (utlity/matcher.py)
+    M6 — Liveness        (utlity/liveness.py)
+
+Controls:
+    Q  — quit
+    R  — reload face database from disk (useful after running register.py)
+"""
+
 import cv2
 import numpy as np
+
 from detectors.face_detector import OpenCVFaceDetector
-from utlity.preprocessing import  preprocessing
-from utlity.embedding import ArcFaceEmbedder 
+from utlity.preprocessing import preprocessing
+from utlity.matcher import FaceMatcher
+from utlity.liveness import LivenessChecker
+
+
+def draw_hud(frame, face, label, score, liveness):
+    """Draw bounding box, keypoints, label, and liveness HUD on frame."""
+    x, y, w, h = face["expanded_bbox"]
+
+    # Color encodes liveness + match state
+    if not liveness["live"]:
+        box_color = (0, 165, 255)       # orange — waiting for blink
+    elif label == "Unknown":
+        box_color = (0, 0, 255)         # red — unrecognized
+    else:
+        box_color = (0, 220, 50)        # green — verified
+
+    cv2.rectangle(frame, (x, y), (x + w, y + h), box_color, 2)
+
+    # Keypoints
+    for kp in face["keypoints"]:
+        px, py = kp["point"]
+        cv2.circle(frame, (px, py), 3, (0, 100, 255), -1)
+
+    # Identity label
+    id_text = f"{label}  {score:.2f}" if label != "Unknown" else "Unknown"
+    cv2.putText(frame, id_text, (x, y - 12),
+                cv2.FONT_HERSHEY_DUPLEX, 0.55, box_color, 1, cv2.LINE_AA)
+
+    # Liveness badge
+    live_text  = f"LIVE  blinks:{liveness['blink_count']}" if liveness["live"] else f"BLINK REQUIRED  blinks:{liveness['blink_count']}"
+    live_color = (0, 220, 50) if liveness["live"] else (0, 165, 255)
+    cv2.putText(frame, live_text, (x, y + h + 18),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, live_color, 1, cv2.LINE_AA)
+
+    # EAR debug
+    cv2.putText(frame, f"EAR:{liveness['ear']:.3f}", (x, y + h + 34),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (180, 180, 180), 1, cv2.LINE_AA)
 
 
 def main():
+    # ── Init ──────────────────────────────────────────────────────────────────
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("--(!)Error opening camera")
+        print("--(!) Error opening camera")
         raise SystemExit(1)
 
-    detector = OpenCVFaceDetector()
+    detector     = OpenCVFaceDetector()
     preprocessor = preprocessing()
-    try:
-        embedder = ArcFaceEmbedder()
-    except Exception as exc:
-        embedder = None
-        print(f"[ArcFace] Embedding disabled: {exc}")
-    
-    print("Backend:", detector.backend)
-    
-    known_embeddings = []
-    
+    matcher      = FaceMatcher()
+    liveness     = LivenessChecker()   # single checker (single-face scenario)
+
+    print(f"Backend      : {detector.backend}")
+    print(f"Known faces  : {matcher.list_names()}")
+    print("Controls: Q = quit | R = reload DB\n")
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-            
+
             faces = detector.detect(frame)
 
-            for face in faces:
-                x, y, w, h = face["expanded_bbox"]
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                for keypoint in face["keypoints"]:
-                    px, py = keypoint["point"]
-                    cv2.circle(frame, (px, py), 2, (0, 0, 255), -1)
-                if face["face_crop"].size > 0:
-                    cv2.imshow("Face Crop", face["face_crop"])
+            if not faces:
+                liveness.reset()   # reset when face disappears
+            else:
+                # Use the highest-confidence / first face for demo
+                face = faces[0]
 
-                face_tensor = preprocessor.preprocess_face(frame, face)
-                
-                # Use pre-calculated embedding if available (avoids double inference)
-                if face.get("embedding") is not None:
-                    embedding = face["embedding"]
-                elif embedder is not None:
-                    embedding = embedder.get_embedding(frame, face)
+                # ── Embedding (cached from M1; no double inference) ───────────
+                embedding = face.get("embedding")
+
+                # ── Liveness (M6) ─────────────────────────────────────────────
+                live_result = liveness.check(face)
+
+                # ── Matching (M5) ─────────────────────────────────────────────
+                if embedding is not None and live_result["live"]:
+                    name, score = matcher.match(embedding)
+                elif embedding is not None:
+                    name, score = "⟳ Blink to verify", 0.0
                 else:
-                    embedding = None
+                    name, score = "No embedding", 0.0
 
-                face["current_embedding"] = embedding
+                # ── HUD ───────────────────────────────────────────────────────
+                draw_hud(frame, face, name, score, live_result)
 
-                if embedding is not None:
-                    # Identification
-                    best_match_id = -1
-                    best_similarity = -1
-                    for i, known_emb in enumerate(known_embeddings):
-                        # Cosine similarity
-                        similarity = np.dot(embedding, known_emb) / (np.linalg.norm(embedding) * np.linalg.norm(known_emb))
-                        if similarity > best_similarity:
-                            best_similarity = similarity
-                            best_match_id = i
-                    
-                    # Threshold for recognition (0.5 is a common starting point for Cosine Similarity with ArcFace)
-                    if best_similarity > 0.5:
-                        label = f"ID: {best_match_id} ({best_similarity:.2f})"
-                        color = (0, 255, 0)
-                    else:
-                        label = "Unknown (Press 's' to save)"
-                        color = (0, 0, 255)
-                        
-                    cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                # Face crop preview
+                crop = face.get("face_crop")
+                if crop is not None and crop.size > 0:
+                    cv2.imshow("Face Crop", crop)
 
-            cv2.imshow("Video Stream", frame)
+            # ── Global HUD ────────────────────────────────────────────────────
+            cv2.putText(frame, f"DB: {matcher.list_names() or ['empty']}",
+                        (8, frame.shape[0] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (160, 160, 160), 1)
+            cv2.imshow("Safe Device — Face Verification", frame)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
-            elif key == ord("s"):
-                # Store unknown faces
-                for face in faces:
-                    if face.get("current_embedding") is not None:
-                        known_embeddings.append(face["current_embedding"])
-                        print(f"Stored face with ID: {len(known_embeddings) - 1}")
+            elif key == ord("r"):
+                matcher.reload()
+                print(f"[main] DB reloaded — {matcher.list_names()}")
+
     finally:
         detector.close()
         cap.release()
