@@ -1,7 +1,7 @@
 # AI Agent Instructions for safe_device
 
 ## Project Overview
-**safe_device** is a complete face verification system built on computer vision and deep learning. It provides real-time face detection, embedding, matching, liveness detection, and a REST API — all GPU-accelerated via CUDA/PyTorch.
+**safe_device** is a complete face verification system with desktop access control, built on computer vision and deep learning. It provides real-time face detection, embedding, matching, liveness detection, a REST API, and a background access-control agent that monitors open windows and enforces per-user permission rules — all GPU-accelerated via CUDA/PyTorch.
 
 **Core Tech Stack:**
 - **Deep Learning**: PyTorch + TensorFlow + Keras
@@ -9,6 +9,7 @@
 - **Face Detection / Embedding**: InsightFace (`buffalo_l`) — primary; MTCNN — fallback
 - **Face Matching**: Cosine similarity on L2-normalized 512-d ArcFace embeddings
 - **REST API**: FastAPI + Uvicorn (Module 7)
+- **Desktop Access Control**: FaceGuard agent — window monitoring + rule enforcement (Module 8)
 - **GPU Support**: CUDA 128 via PyTorch / ONNX Runtime (InsightFace)
 - **Development**: Jupyter notebooks, Python 3.x
 
@@ -25,6 +26,7 @@
 | M5 | Face Matching | `utlity/matcher.py` | ✅ Done |
 | M6 | Liveness Detection | `utlity/liveness.py` | ✅ Done |
 | M7 | FastAPI Backend | `api.py` | ✅ Done |
+| M8 | Desktop Access Control | `faceguard/main.py` + `faceguard/*.py` + `profiles.json` | ✅ Done |
 
 ---
 
@@ -53,6 +55,7 @@ safe_device/
 ├── main.py                   # Real-time demo — integrates all 6 modules
 ├── register.py               # CLI to register a face into the database (M4)
 ├── api.py                    # FastAPI REST backend (M7)
+├── profiles.json             # M8 — per-user permission rules
 ├── requirements.txt          # Core dependencies
 ├── requirements_api.txt      # Additional API dependencies (FastAPI, uvicorn)
 ├── detectors/
@@ -62,6 +65,12 @@ safe_device/
 │   ├── embedding.py          # M3 — ArcFace embedding (L2-normalized, norm=1.0)
 │   ├── matcher.py            # M5 — cosine similarity matching against face_db
 │   └── liveness.py           # M6 — blink detection via EAR proxy
+├── faceguard/                # M8 — Desktop Access Control (FaceGuard)
+│   ├── main.py               # Entry point — face scan → monitor loop
+│   ├── face_verify.py        # Calls FastAPI /verify to identify user
+│   ├── window_monitor.py     # Reads active window title/process (cross-platform)
+│   ├── access_rules.py       # Checks window against allowed/blocked lists
+│   └── notifier.py           # Desktop warning popup (via plyer)
 ├── face_db/
 │   └── faces.pkl             # Pickle DB: {"Name": np.ndarray(512,)} — created at runtime
 ├── model/
@@ -105,6 +114,47 @@ uvicorn api:app --reload --host 0.0.0.0 --port 8000
 | `GET` | `/list` | List all registered names |
 | `GET` | `/health` | Health check |
 
+### Run FaceGuard Desktop Access Control (M8)
+```bash
+# Terminal 1 — start FastAPI backend first
+uvicorn api:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 2 — start the desktop monitor
+python -m faceguard.main
+```
+
+**Runtime flow:**
+1. Camera opens → captures a frame → sends to FastAPI `/verify`
+2. If verified → loads matching profile from `profiles.json`
+3. Background loop polls the active window every 1.5 seconds
+4. If the window title matches a blocked keyword → window is minimized + desktop notification shown
+5. Session expires after `session_minutes` → requires re-verification
+
+**profiles.json format:**
+```json
+{
+    "Divyansh": {
+        "role": "admin",
+        "allowed_urls": ["*"],
+        "blocked_urls": [],
+        "allowed_hours": { "start": 0, "end": 23 },
+        "session_minutes": 60
+    },
+    "Guest": {
+        "role": "guest",
+        "allowed_urls": ["google", "stackoverflow", "github"],
+        "blocked_urls": ["youtube", "instagram", "facebook", "netflix"],
+        "allowed_hours": { "start": 9, "end": 18 },
+        "session_minutes": 30
+    }
+}
+```
+- `role: "admin"` → bypasses all URL and time checks
+- `blocked_urls` takes priority over `allowed_urls`
+- `allowed_urls: ["*"]` → wildcard, everything allowed
+- `allowed_hours` → access denied outside this window
+- `session_minutes` → auto-expire after this duration
+
 ---
 
 ## Key Design Decisions
@@ -137,6 +187,17 @@ The normalization happens in two places:
 - Default cosine similarity threshold: **0.4** (configurable in `FaceMatcher.THRESHOLD`)
 - With L2-normalized ArcFace embeddings this is conservative — increase to 0.5 if you see false positives
 
+### Desktop Access Control (M8 — FaceGuard)
+- Runs as a background script, completely independent from `main.py`
+- Requires FastAPI (`api.py`) to be running — communicates via HTTP `POST /verify`
+- `face_verify.py` opens webcam once, captures a single frame, sends to API
+- `window_monitor.py` uses platform-native APIs: `ctypes` (Windows), `xdotool` (Linux), `AppKit` (macOS)
+- `access_rules.py` matches active window title/process against the user's profile from `profiles.json`
+- `notifier.py` uses `plyer` for cross-platform desktop notifications with a 5-second cooldown
+- Blocked windows are immediately minimized via `ShowWindow(hwnd, SW_MINIMIZE)` on Windows
+- Internal windows (Task Manager, Terminal, Python) are auto-skipped to avoid locking the user out
+- Session expiry enforced — user must re-verify face after `session_minutes` elapse
+
 ---
 
 ## Key Modules & Frameworks
@@ -149,6 +210,9 @@ The normalization happens in two places:
 | **OpenCV** | Image processing | Frame reading, drawing |
 | **FastAPI** | REST API | Async, auto-docs at /docs |
 | **NumPy/SciPy** | Embedding math | Cosine similarity, normalization |
+| **psutil** | Process name from PID | Used by `window_monitor.py` (M8) |
+| **plyer** | Cross-platform notifications | Desktop popups in `notifier.py` (M8) |
+| **requests** | HTTP client | `face_verify.py` calls FastAPI (M8) |
 
 ---
 
@@ -188,6 +252,10 @@ LivenessChecker.REQUIRED_BLINKS = 1    # blinks before "live"
 - ⚠️ **5-point EAR**: The proxy EAR from InsightFace's 5-point model is less accurate than 6-point dlib. For robust liveness, upgrade to MediaPipe Face Mesh
 - ⚠️ **Single-frame API liveness**: `/verify` endpoint cannot detect blinks in one image — it returns a static EAR proxy only. Real liveness requires video frames
 - ⚠️ **register.py requires webcam**: For API-only deployments, add a `/register` endpoint that accepts multiple frames instead
+- ⚠️ **FaceGuard requires FastAPI running**: Module 8 calls `http://localhost:8000/verify` — start `api.py` before launching FaceGuard
+- ⚠️ **Window monitor is Windows-primary**: Linux requires `xdotool`, macOS requires `AppKit` / PyObjC. Test on target OS
+- ⚠️ **psutil permission**: On some systems `psutil.Process(pid).name()` may require elevated privileges
+- ⚠️ **Notification spam**: `notifier.py` has a 5-second cooldown, but rapid window switching can still feel noisy — increase `COOLDOWN_SECONDS` if needed
 
 ---
 *Last updated: 2026-06-14*

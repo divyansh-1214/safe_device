@@ -1,0 +1,50 @@
+{
+    "Divyansh": {
+        "role": "admin",
+        "allowed_urls": [
+            "*"
+        ],
+        "blocked_urls": [],
+        "allowed_hours": {
+            "start": 0,
+            "end": 23
+        },
+        "session_minutes": 60
+    },
+    "Divyansh1": {
+        "role": "guest",
+        "allowed_urls": [
+            "google",
+            "stackoverflow",
+            "github",
+            "localhost"
+        ],
+        "blocked_urls": [],
+        "allowed_hours": {
+            "start": 0,
+            "end": 23
+        },
+        "session_minutes": 60
+    },
+    "Guest": {
+        "role": "guest",
+        "allowed_urls": [
+            "google",
+            "stackoverflow",
+            "github",
+            "localhost"
+        ],
+        "blocked_urls": [
+            "youtube",
+            "instagram",
+            "facebook",
+            "netflix",
+            "twitter"
+        ],
+        "allowed_hours": {
+            "start": 9,
+            "end": 18
+        },
+        "session_minutes": 30
+    }
+}
