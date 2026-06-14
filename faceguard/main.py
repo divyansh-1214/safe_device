@@ -42,83 +42,99 @@ def run():
 
     profiles = load_profiles()
 
-    # ── Step 1: Face verification ─────────────────────────────────────────
-    print("\n[Step 1] Scanning your face...")
-    result = capture_and_verify()
-
-    if not result:
-        print("[FaceGuard] Could not verify face — exiting")
-        return
-
-    name = result["name"]
-    profile = profiles.get(name)
-
-    if not profile:
-        print(f"[FaceGuard] No profile found for '{name}'")
-        return
-
-    # Session timer
-    session_minutes = profile.get("session_minutes", 30)
-    session_expiry = time.time() + (session_minutes * 60)
-
-    print(f"\n[FaceGuard] Welcome, {name}!")
-    print(f"  Role    : {profile['role']}")
-    print(f"  Session : {session_minutes} minutes")
-    print(f"  Blocked : {profile.get('blocked_urls', [])}")
-    print(f"  Allowed : {profile.get('allowed_urls', ['*'])}")
-    print("\n[FaceGuard] Monitoring started. Press Ctrl+C to stop.\n")
-
-    # ── Step 2: Monitor loop ──────────────────────────────────────────────
-    last_blocked_title = ""
-
+    # ── Outer loop: re-verify face after every session expiry ─────────────
     while True:
-        try:
-            # ── Session expiry check ──────────────────────────────────────
-            remaining = session_expiry - time.time()
+        # ── Step 1: Face verification ─────────────────────────────────────
+        print("\n[Step 1] Scanning your face...")
+        result = capture_and_verify()
 
-            if remaining <= 0:
-                print(f"\n[FaceGuard] Session expired for {name}")
-                show_warning(name, "Session expired — please verify again", "")
-                break
+        if not result:
+            print("[FaceGuard] Could not verify face — retrying in 5 seconds...")
+            time.sleep(5)
+            continue
 
-            if remaining <= SESSION_WARN_AHEAD * 60:
-                mins_left = int(remaining // 60)
-                print(f"[FaceGuard] Warning — {mins_left} min left in session")
+        if result.get("verified"):
+            name = result["name"]
+        else:
+            name = "Guest"
+            print("[FaceGuard] Unknown face detected — using Guest profile")
 
-            # ── Read active window ────────────────────────────────────────
-            window = get_active_window()
-            title = window.get("title", "")
+        # Reload profiles each session so edits to profiles.json take effect
+        profiles = load_profiles()
+        profile = profiles.get(name) or profiles.get("Guest")
 
-            if not title:
+        if not profile:
+            print(f"[FaceGuard] No profile found for '{name}' and no Guest fallback is configured")
+            return
+
+        # Session timer
+        session_minutes = profile.get("session_minutes", 30)
+        session_expiry = time.time() + (session_minutes * 60)
+
+        print(f"\n[FaceGuard] Welcome, {name}!")
+        print(f"  Role    : {profile['role']}")
+        print(f"  Session : {session_minutes} minutes")
+        print(f"  Blocked : {profile.get('blocked_urls', [])}")
+        print(f"  Allowed : {profile.get('allowed_urls', ['*'])}")
+        print("\n[FaceGuard] Monitoring started. Press Ctrl+C to stop.\n")
+
+        # ── Step 2: Monitor loop ──────────────────────────────────────────
+        last_blocked_title = ""
+        session_expired = False
+
+        while True:
+            try:
+                # ── Session expiry check ──────────────────────────────────
+                remaining = session_expiry - time.time()
+
+                if remaining <= 0:
+                    print(f"\n[FaceGuard] Session expired for {name}")
+                    show_warning(name, "Session expired — re-scanning face...", "")
+                    session_expired = True
+                    break  # break inner loop → outer loop re-verifies
+
+                if remaining <= SESSION_WARN_AHEAD * 60:
+                    mins_left = int(remaining // 60)
+                    print(f"[FaceGuard] Warning — {mins_left} min left in session")
+
+                # ── Read active window ────────────────────────────────────
+                window = get_active_window()
+                title = window.get("title", "")
+
+                if not title:
+                    time.sleep(MONITOR_INTERVAL)
+                    continue
+
+                # Skip internal / system windows
+                if any(kw in title.lower() for kw in SKIP_KEYWORDS):
+                    time.sleep(MONITOR_INTERVAL)
+                    continue
+
+                # ── Access check ──────────────────────────────────────────
+                allowed, reason = check_access(window, profile)
+
+                if not allowed:
+                    # Only act on a *new* blocked window to avoid repeated minimize
+                    if title != last_blocked_title:
+                        print(f"[BLOCKED] {title}")
+                        print(f"          Reason: {reason}")
+                        minimize_active_window()
+                        show_warning(name, reason, title)
+                        last_blocked_title = title
+                else:
+                    last_blocked_title = ""   # reset when an allowed window is active
+
                 time.sleep(MONITOR_INTERVAL)
-                continue
 
-            # Skip internal / system windows
-            if any(kw in title.lower() for kw in SKIP_KEYWORDS):
-                time.sleep(MONITOR_INTERVAL)
-                continue
+            except KeyboardInterrupt:
+                print(f"\n[FaceGuard] Stopped by user")
+                print("[FaceGuard] Session ended")
+                return  # exit entirely on Ctrl+C
 
-            # ── Access check ──────────────────────────────────────────────
-            allowed, reason = check_access(window, profile)
-
-            if not allowed:
-                # Only act on a *new* blocked window to avoid repeated minimize
-                if title != last_blocked_title:
-                    print(f"[BLOCKED] {title}")
-                    print(f"          Reason: {reason}")
-                    minimize_active_window()
-                    show_warning(name, reason, title)
-                    last_blocked_title = title
-            else:
-                last_blocked_title = ""   # reset when an allowed window is active
-
-            time.sleep(MONITOR_INTERVAL)
-
-        except KeyboardInterrupt:
-            print(f"\n[FaceGuard] Stopped by user")
-            break
-
-    print("[FaceGuard] Session ended")
+        # If we got here via session expiry, loop back to re-verify
+        if session_expired:
+            print("[FaceGuard] Session ended — starting re-verification...\n")
+            continue
 
 
 if __name__ == "__main__":

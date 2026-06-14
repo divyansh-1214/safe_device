@@ -56,10 +56,10 @@ def capture_and_verify() -> dict | None:
         if result.get("verified"):
             print(f"[FaceVerify] Verified as: {result['name']} "
                   f"(score: {result['score']:.3f})")
-            return result
         else:
             print("[FaceVerify] Face not recognized")
-            return None
+
+        return result
 
     except requests.exceptions.ConnectionError:
         print("[FaceVerify] FastAPI not running — start it first:\n"
