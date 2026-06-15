@@ -1,0 +1,64 @@
+MIT License
+
+Copyright (c) 2026 Divyansh Srivastava
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+
+NOTICE
+
+This software, Safe Device, is a GPU-accelerated face verification system
+built with Python. It integrates real-time face detection, 512-dimensional
+ArcFace embeddings, blink-based liveness detection, a FastAPI REST backend,
+and the FaceGuard desktop access control agent.
+
+Safe Device makes use of the following open-source projects, each governed
+by their own respective licenses:
+
+  - InsightFace        — MIT License
+                         https://github.com/deepinsight/insightface
+
+  - MTCNN              — MIT License
+                         https://github.com/ipazc/mtcnn
+
+  - PyTorch            — BSD License
+                         https://github.com/pytorch/pytorch
+
+  - OpenCV             — Apache 2.0 / BSD License
+                         https://github.com/opencv/opencv
+
+  - FastAPI            — MIT License
+                         https://github.com/tiangolo/fastapi
+
+  - ONNX Runtime       — MIT License
+                         https://github.com/microsoft/onnxruntime
+
+  - NumPy              — BSD License
+                         https://github.com/numpy/numpy
+
+  - psutil             — BSD License
+                         https://github.com/giampaolo/psutil
+
+  - plyer              — MIT License
+                         https://github.com/kivy/plyer
+
+The inclusion of these libraries does not imply endorsement by their
+respective authors or organizations. All trademarks and registered
+trademarks are the property of their respective owners.
